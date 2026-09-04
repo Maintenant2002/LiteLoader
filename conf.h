@@ -22,7 +22,4 @@
 /* UART 接收超时时间（毫秒） */
 #define CONF_UART_TIMEOUT_MS    5000
 
-/* 每帧数据载荷大小（字节，不含 opcode） */
-#define CONF_DATA_PAYLOAD_SIZE  127
-
 #endif /* LITE_LOADER_CONF_H */
