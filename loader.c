@@ -1,9 +1,12 @@
 #include "loader.h"
 #include "conf.h"
+#include <stddef.h>
 
 /* ============================================================
- *  ARM Cortex-M 跳转辅助
+ *  ARM Cortex-M 跳转辅助（仅 ARM 平台编译）
  * ============================================================ */
+
+#ifdef USING_ARM_CHIP
 
 #ifndef __set_MSP
 static inline void __set_MSP(uint32_t topOfMainStack)
@@ -17,11 +20,22 @@ static void jump_to_app(uint32_t app_addr)
     uint32_t app_stack = *(volatile uint32_t *)(app_addr);
     uint32_t app_entry = *(volatile uint32_t *)(app_addr + 4);
 
+    /* 关闭全局中断，防止跳转后触发 bootloader 的中断处理 */
+    __asm volatile ("cpsid i" ::: "memory");
+
+    /* 关闭 SysTick */
+    *((volatile uint32_t *)0xE000E010) = 0;
+
+    /* 将向量表偏移指向应用程序 */
+    *((volatile uint32_t *)0xE000ED08) = app_addr;
+
     __set_MSP(app_stack);
 
     void (*entry)(void) = (void (*)(void))app_entry;
     entry();
 }
+
+#endif /* USING_ARM_CHIP */
 
 /* ============================================================
  *  公共 API
@@ -57,7 +71,11 @@ void boot_process(loader_port_t *port,
 
     /* 检查是否进入 bootloader 模式 */
     if (!ctx.port.is_boot_state()) {
+#ifdef USING_ARM_CHIP
         jump_to_app(CONF_APP_START_ADDR);
+#else
+        ctx.port.test("Not in bootloader mode, jump to app.\n");
+#endif
         return;
     }
 
@@ -147,7 +165,13 @@ void boot_process(loader_port_t *port,
     }
 
     if (ctx.state == STATE_JUMP) {
+#ifdef USING_ARM_CHIP
         jump_to_app(CONF_APP_START_ADDR);
+        /* jump_to_app 不会返回 */
+#else
+        ctx.port.test("Boot complete, ready to jump to app.\n");
+        return;
+#endif
     }
 
     /* STATE_ERROR：死循环等待外部复位 */

@@ -25,12 +25,10 @@ typedef struct {
 
     /* 可选：系统复位（为 NULL 时使用默认 NVIC 复位） */
     void (*reset)(void);
+    void (*test)(const char *strs);
 } loader_port_t;
 
 /* 校验端口（所有必填函数指针非空），返回 false 表示端口不完整 */
 bool loader_port_init(loader_port_t *port);
-
-/* bootloader 主入口，不会返回（除非跳转到应用程序） */
-void boot_process(loader_port_t *port);
 
 #endif /* LITE_LOADER_PORT_H */

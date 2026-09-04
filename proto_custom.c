@@ -145,6 +145,15 @@ static bool custom_receive_chunk(loader_port_t *port,
                                  uint32_t max_len,
                                  uint32_t *actual_len)
 {
+    (void)buf;
+    (void)max_len;
+
+    /* 上一轮已收齐全部数据，通知调用者传输结束 */
+    if (s_fw_received >= s_fw_size) {
+        *actual_len = 0;
+        return true;
+    }
+
     uint8_t frame[132];
 
     while (1) {
