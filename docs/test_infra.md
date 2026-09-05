@@ -44,8 +44,19 @@ CHECK_BOOT → PROTO_INIT → RECEIVE(循环) → VERIFY → 跳转
 
 ```c
 boot_context_t ctx;
-boot_init(&ctx, &state_check_boot_state, &hal, &proto_xmodem,
-          0x08001000, 1024, 63);
+```c
+boot_config_t cfg = {
+    .init_state      = &state_check_boot_state,
+    .hal             = &hal,
+    .proto           = &proto_xmodem,
+    .rx_buf          = buf,
+    .rx_buf_size     = sizeof(buf),
+    .app_start_addr  = 0x08001000,
+    .flash_page_size = 1024,
+    .total_pages     = 63,
+};
+boot_context_t ctx;
+boot_init(&ctx, &cfg);
 boot_handle(&ctx);  // 阻塞运行直到完成或错误
 ```
 

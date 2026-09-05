@@ -29,15 +29,28 @@ typedef struct {
     const char *name;
 } state_t;
 
+typedef struct {
+    state_t *init_state;        /* 初始状态 */
+    hal_port_t *hal;            /* 硬件抽象层 */
+    proto_t *proto;             /* 传输协议 */
+    uint8_t *rx_buf;            /* 接收缓冲区（调用者分配） */
+    uint32_t rx_buf_size;       /* 缓冲区大小 */
+    uint32_t app_start_addr;    /* 应用起始地址 */
+    uint32_t flash_page_size;   /* Flash 页大小 */
+    uint32_t total_pages;       /* 需擦除的页数 */
+} boot_config_t;
+
 typedef struct boot_context {
     state_t *cur_state;
-    hal_port_t *hal;              // 硬件抽象层
-    proto_t *proto;               // 传输协议
-    void *proto_priv;             // 协议私有数据
-    uint32_t app_start_addr;      // 运行时配置
+    hal_port_t *hal;
+    proto_t *proto;
+    void *proto_priv;             /* 协议私有数据 */
+    uint8_t *rx_buf;              /* 接收缓冲区指针 */
+    uint32_t rx_buf_size;
+    uint32_t app_start_addr;
     uint32_t flash_page_size;
     uint32_t total_pages;
-    uint32_t current_write_addr;  // 运行时更新
+    uint32_t current_write_addr;  /* 运行时更新 */
 } boot_context_t;
 ```
 
@@ -152,10 +165,21 @@ extern proto_t proto_xmodem;
 
 int main(void) {
     hal_port_t hal = { /* 填充你的硬件实现 */ };
+    uint8_t rx_buf[128];
+
+    boot_config_t cfg = {
+        .init_state      = &state_check_boot_state,
+        .hal             = &hal,
+        .proto           = &proto_xmodem,
+        .rx_buf          = rx_buf,
+        .rx_buf_size     = sizeof(rx_buf),
+        .app_start_addr  = 0x08001000,
+        .flash_page_size = 1024,
+        .total_pages     = 63,
+    };
 
     boot_context_t ctx;
-    boot_init(&ctx, &state_check_boot_state, &hal, &proto_xmodem,
-              0x08001000, 1024, 63);
+    boot_init(&ctx, &cfg);
     boot_handle(&ctx);  // 阻塞，不会返回（成功跳转或错误复位）
 }
 ```
@@ -186,7 +210,8 @@ proto_t proto_custom = {
 | 状态管理 | 状态模式（函数指针） | 每个状态独立，易于扩展 |
 | 协议格式 | XMODEM-CRC | 标准协议，工具链丰富 |
 | 帧校验 | CRC-16/CCITT | XMODEM 标准，16 位查表 |
-| 配置方式 | 运行时参数 | boot_init 传入，不依赖编译期宏 |
+| 配置方式 | boot_config_t 初始化结构体 | 参数集中，易于扩展 |
 | 状态存储 | 栈上 boot_context_t | 避免全局变量 |
+| 接收缓冲区 | 调用者通过 rx_buf 提供 | 缓冲区大小由协议需求决定 |
 | 协议抽象 | proto_t 函数指针 | 开闭原则，新增协议不改状态机 |
 | 私有数据 | ctx->proto_priv | 协议内部状态不污染上下文 |

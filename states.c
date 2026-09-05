@@ -43,17 +43,17 @@ extern proto_t proto_xmodem;
  *  公共接口实现
  * ============================================================ */
 
-void boot_init(boot_context_t *ctx, state_t *init_state,
-               hal_port_t *hal, proto_t *proto,
-               uint32_t app_start, uint32_t page_size, uint32_t page_count)
+void boot_init(boot_context_t *ctx, const boot_config_t *cfg)
 {
     memset(ctx, 0, sizeof(*ctx));
-    ctx->cur_state       = init_state;
-    ctx->hal             = hal;
-    ctx->proto           = proto;
-    ctx->app_start_addr  = app_start;
-    ctx->flash_page_size = page_size;
-    ctx->total_pages     = page_count;
+    ctx->cur_state       = cfg->init_state;
+    ctx->hal             = cfg->hal;
+    ctx->proto           = cfg->proto;
+    ctx->rx_buf          = cfg->rx_buf;
+    ctx->rx_buf_size     = cfg->rx_buf_size;
+    ctx->app_start_addr  = cfg->app_start_addr;
+    ctx->flash_page_size = cfg->flash_page_size;
+    ctx->total_pages     = cfg->total_pages;
 }
 
 void change_state(boot_context_t *ctx, state_t *new_state)
@@ -131,28 +131,26 @@ static void handler_protocol_init(boot_context_t *ctx)
 }
 
 /* 状态：接收数据块并写入 Flash */
+
 static void handler_receive(boot_context_t *ctx)
 {
-    uint8_t buffer[128];
     uint32_t len = 0;
 
-    bool result = ctx->proto->receive_chunk(ctx, buffer, sizeof(buffer), &len);
+    bool result = ctx->proto->receive_chunk(ctx, ctx->rx_buf,
+                                             ctx->rx_buf_size, &len);
     if (!result) {
         change_state(ctx, &state_error);
         return;
     }
     if (len == 0) {
-        /* 传输结束 */
         change_state(ctx, &state_verify);
         return;
     }
-    /* 写入 Flash */
-    if (!ctx->hal->write_flash(ctx->current_write_addr, buffer, len)) {
+    if (!ctx->hal->write_flash(ctx->current_write_addr, ctx->rx_buf, len)) {
         change_state(ctx, &state_error);
         return;
     }
     ctx->current_write_addr += len;
-    /* 状态不变，继续接收下一块 */
 }
 
 /* 状态：校验并跳转 */

@@ -52,22 +52,31 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    /* 构建 HAL 和协议 */
+    /* 构建配置 */
     hal_port_t hal = port_win32_create();
-    proto_t *proto = &proto_xmodem;
+    uint8_t rx_buf[128];
 
-    /* 初始化 bootloader 上下文 */
+    boot_config_t cfg = {
+        .init_state      = &state_check_boot_state,
+        .hal             = &hal,
+        .proto           = &proto_xmodem,
+        .rx_buf          = rx_buf,
+        .rx_buf_size     = sizeof(rx_buf),
+        .app_start_addr  = 0x08001000,
+        .flash_page_size = 1024,
+        .total_pages     = 63,
+    };
+
+    /* 初始化并运行 bootloader */
     boot_context_t ctx;
-    boot_init(&ctx, &state_check_boot_state, &hal, proto,
-              0x08001000, 1024, 63);
+    boot_init(&ctx, &cfg);
 
     printf("=== LiteLoader Test ===\n");
     printf("Firmware: %s\n", fw_path);
     printf("Flash output: %s\n", flash_out);
-    printf("Protocol: %s\n", proto->name ? proto->name : "(unnamed)");
+    printf("Protocol: %s\n", cfg.proto->name ? cfg.proto->name : "(unnamed)");
     printf("=======================\n\n");
 
-    /* 运行 bootloader */
     boot_handle(&ctx);
 
     /* 清理 */
