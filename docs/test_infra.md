@@ -18,7 +18,7 @@ LiteLoader/
 ├── hal_port.h                  # 硬件抽象层接口
 ├── proto.h                     # 协议抽象接口
 ├── boot_config.h               # 配置（地址、页大小等）
-├── xmodem_proto.c              # XMODEM-CRC 协议实现
+├── proto_xmodem.c              # XMODEM-CRC 协议实现
 ├── test/
 │   ├── CMakeLists.txt          # 测试构建入口
 │   ├── gen_firmware.py         # Python XMODEM-CRC 帧生成器
@@ -44,7 +44,7 @@ CHECK_BOOT → PROTO_INIT → RECEIVE(循环) → VERIFY → 跳转
 
 ```c
 boot_context_t ctx;
-boot_init(&ctx, &state_check_boot_state, &hal, &xmodem_protocol,
+boot_init(&ctx, &state_check_boot_state, &hal, &proto_xmodem,
           0x08001000, 1024, 63);
 boot_handle(&ctx);  // 阻塞运行直到完成或错误
 ```
@@ -107,7 +107,7 @@ def crc16_xmodem(data):
     return crc
 ```
 
-必须与 `xmodem_proto.c` 中的 `crc16_update` 一致。
+必须与 `proto_xmodem.c` 中的 `crc16_update` 一致。
 
 ### 5.3 不足 128 字节的尾包
 
@@ -204,7 +204,7 @@ typedef struct boot_context { ... } boot_context_t;
 
 **修复**：CAN 检查移入 `XM_STATE_WAIT_SOH` 分支，仅在等待包头时检查。
 
-### 8.4 xmodem_proto.c 使用 malloc
+### 8.4 proto_xmodem.c 使用 malloc
 
 **现象**：嵌入式环境无堆或堆极小，`malloc(sizeof(xmodem_priv_t))` 不可靠。
 

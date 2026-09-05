@@ -7,7 +7,7 @@ cmake_minimum_required(VERSION 3.15)
 # ---- 核心源文件 ----
 set(LOADER_CORE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/states.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/xmodem_proto.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/proto_xmodem.c
 )
 
 set(LOADER_CORE_HEADERS

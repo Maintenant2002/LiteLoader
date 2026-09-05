@@ -310,7 +310,7 @@ states.c          状态实现 + boot_handle/boot_init/change_state
 hal_port.h        硬件抽象层接口
 proto.h           协议抽象接口
 boot_config.h     配置宏
-xmodem_proto.c    XMODEM-CRC 协议实现
+proto_xmodem.c    XMODEM-CRC 协议实现
 ```
 
 ### 7.5 接口对比
@@ -323,7 +323,7 @@ boot_process(&port, proto, buf, sizeof(buf));
 **新接口**：
 ```c
 boot_context_t ctx;
-boot_init(&ctx, &state_check_boot_state, &hal, &xmodem_protocol,
+boot_init(&ctx, &state_check_boot_state, &hal, &proto_xmodem,
           APP_START_ADDR, FLASH_PAGE_SIZE, APP_PAGE_COUNT);
 boot_handle(&ctx);
 ```

@@ -37,7 +37,7 @@ static void jump_to_app(uint32_t app_addr)
 
 #endif /* USING_ARM_CHIP */
 
-extern proto_t xmodem_protocol;
+extern proto_t proto_xmodem;
 
 /* ============================================================
  *  公共接口实现

@@ -1,4 +1,4 @@
-// xmodem_proto.c
+// proto_xmodem.c
 #include "proto.h"
 #include "hal_port.h"
 #include "boot_loader.h"
@@ -167,7 +167,7 @@ static void xmodem_finish(void *ctx) {
     (void)ctx;
 }
 
-proto_t xmodem_protocol = {
+proto_t proto_xmodem = {
     .name = "XMODEM-CRC",
     .init = xmodem_init,
     .receive_chunk = xmodem_receive_chunk,

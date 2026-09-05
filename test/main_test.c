@@ -20,8 +20,8 @@ extern int         port_win32_uart_open(const char *path);
 extern void        port_win32_uart_close(void);
 extern hal_port_t  port_win32_create(void);
 
-/* xmodem_proto.c 提供的协议实例 */
-extern proto_t xmodem_protocol;
+/* proto_xmodem.c 提供的协议实例 */
+extern proto_t proto_xmodem;
 
 int main(int argc, char *argv[])
 {
@@ -54,7 +54,7 @@ int main(int argc, char *argv[])
 
     /* 构建 HAL 和协议 */
     hal_port_t hal = port_win32_create();
-    proto_t *proto = &xmodem_protocol;
+    proto_t *proto = &proto_xmodem;
 
     /* 初始化 bootloader 上下文 */
     boot_context_t ctx;
