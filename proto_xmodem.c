@@ -15,6 +15,7 @@ typedef enum {
 typedef struct {
     xmodem_state_t state;
     uint8_t packet_num;       // 期望的包序号（从 1 开始）
+    uint8_t last_acked_seq;   // 上一个已确认的包序号（用于重复包检测）
     uint8_t recv_buf[128];    // 当前包数据
     uint32_t recv_len;        // 已接收字节数
     uint16_t recv_crc;        // 接收到的 CRC
@@ -131,15 +132,20 @@ static bool xmodem_receive_chunk(void *ctx, uint8_t *buf,
                 }
                 if (priv->recv_len == 131) {
                     priv->recv_crc |= byte;
-                    // 检查 CRC
                     if (priv->recv_crc == priv->calc_crc) {
-                        // 校验成功，发送 ACK
+                        /* 重复包：ACK 丢失导致发送方重传，发 ACK 继续等下一包 */
+                        if (priv->packet_num == priv->last_acked_seq) {
+                            hal->uart_transmit((uint8_t*)"\x06", 1);
+                            priv->state = XM_STATE_WAIT_SOH;
+                            priv->recv_len = 0;
+                            break;  /* 不返回，继续接收 */
+                        }
+                        /* 正常接收，发送 ACK */
                         hal->uart_transmit((uint8_t*)"\x06", 1);
-                        // 将数据拷贝到输出缓冲区
                         uint32_t copy_len = (max_len < 128) ? max_len : 128;
                         memcpy(buf, priv->recv_buf, copy_len);
                         *actual_len = copy_len;
-                        // 准备下一包
+                        priv->last_acked_seq = priv->packet_num;
                         priv->state = XM_STATE_WAIT_SOH;
                         priv->packet_num++;
                         return true;
