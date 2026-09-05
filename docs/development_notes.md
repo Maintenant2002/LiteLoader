@@ -246,3 +246,84 @@ static const loader_protocol_t s_ymodem = {
 | 状态存储 | 栈上 loader_ctx_t | 避免全局变量，~178B RAM |
 | 协议抽象 | loader_protocol_t 函数指针 | 开闭原则，新增协议不改状态机 |
 | 接收缓冲区 | 调用者提供 | loader.c 不关心分配方式 |
+
+---
+
+## 7. 第三阶段：状态模式重构
+
+### 7.1 问题
+
+第二阶段的 `switch` 状态机虽然已经协议解耦，但仍有局限：
+- 所有状态挤在一个函数里，添加新状态需要修改 `switch`
+- 状态转换逻辑散布在 `case` 分支中，不易跟踪
+- 配置（地址、页数）硬编码在 `conf.h`，运行时不可变
+
+### 7.2 状态模式设计
+
+将每个状态封装为独立函数，通过函数指针表驱动：
+
+```c
+typedef void (*state_handler_t)(struct boot_context *ctx);
+
+typedef struct {
+    state_handler_t handler;
+    const char *name;
+} state_t;
+
+typedef struct boot_context {
+    state_t *cur_state;
+    hal_port_t *hal;
+    proto_t *proto;
+    void *proto_priv;           // 协议私有数据
+    uint32_t app_start_addr;    // 运行时配置
+    uint32_t flash_page_size;
+    uint32_t total_pages;
+    uint32_t current_write_addr;
+} boot_context_t;
+```
+
+状态转换通过 `change_state(ctx, &state_xxx)` 实现，`boot_handle` 循环派发：
+
+```c
+void boot_handle(boot_context_t *ctx) {
+    while (ctx->cur_state != &state_error) {
+        ctx->cur_state->handler(ctx);
+    }
+    ctx->cur_state->handler(ctx);  // ERROR 处理一次
+}
+```
+
+### 7.3 协议切换为 XMODEM-CRC
+
+| 对比 | 旧（自定义协议） | 新（XMODEM-CRC） |
+|------|-----------------|------------------|
+| 帧格式 | MAGIC\|SEQ\|LEN\|DATA\|CRC | SOH\|PKT\|~PKT\|DATA[128]\|CRC16 |
+| 校验 | XOR(帧级) + CRC32(整体) | CRC-16/CCITT(帧级) |
+| 工具链 | 需要自定义 host 工具 | 标准协议，工具丰富 |
+| 代码量 | ~230 行 | ~180 行 |
+
+### 7.4 重构后文件结构
+
+```
+boot_loader.h     类型定义 + 接口声明
+states.c          状态实现 + boot_handle/boot_init/change_state
+hal_port.h        硬件抽象层接口
+proto.h           协议抽象接口
+boot_config.h     配置宏
+xmodem_proto.c    XMODEM-CRC 协议实现
+```
+
+### 7.5 接口对比
+
+**旧接口**：
+```c
+boot_process(&port, proto, buf, sizeof(buf));
+```
+
+**新接口**：
+```c
+boot_context_t ctx;
+boot_init(&ctx, &state_check_boot_state, &hal, &xmodem_protocol,
+          APP_START_ADDR, FLASH_PAGE_SIZE, APP_PAGE_COUNT);
+boot_handle(&ctx);
+```

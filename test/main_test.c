@@ -3,14 +3,9 @@
  *
  * 用法：
  *   lite_loader_test <firmware.bin> [flash_out.bin]
- *
- * 参数：
- *   firmware.bin  - 由 gen_firmware.py 生成的帧数据文件
- *   flash_out.bin - flash 写入输出（默认 flash_out.bin）
  */
 
-#include "loader.h"
-#include "proto_custom.h"
+#include "boot_loader.h"
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -19,25 +14,28 @@
 #endif
 
 /* port_win32.c 提供的接口 */
-extern int          port_win32_flash_open(const char *path);
-extern void         port_win32_flash_close(void);
-extern int          port_win32_uart_open(const char *path);
-extern void         port_win32_uart_close(void);
-extern loader_port_t port_win32_create(void);
+extern int         port_win32_flash_open(const char *path);
+extern void        port_win32_flash_close(void);
+extern int         port_win32_uart_open(const char *path);
+extern void        port_win32_uart_close(void);
+extern hal_port_t  port_win32_create(void);
+
+/* xmodem_proto.c 提供的协议实例 */
+extern proto_t xmodem_protocol;
 
 int main(int argc, char *argv[])
 {
 #ifdef _WIN32
-    SetConsoleOutputCP(65001);  /* UTF-8 */
+    SetConsoleOutputCP(65001);
 #endif
 
     if (argc < 2) {
         fprintf(stderr,
-            "LiteLoader 测试工具\n"
-            "用法: %s <firmware.bin> [flash_out.bin]\n"
+            "LiteLoader Test\n"
+            "Usage: %s <firmware.bin> [flash_out.bin]\n"
             "\n"
-            "  firmware.bin  - 由 gen_firmware.py 生成的帧数据文件\n"
-            "  flash_out.bin - flash 输出文件（默认 flash_out.bin）\n",
+            "  firmware.bin  - XMODEM-CRC frame file (from gen_firmware.py)\n"
+            "  flash_out.bin - flash output file (default: flash_out.bin)\n",
             argv[0]);
         return 1;
     }
@@ -45,37 +43,37 @@ int main(int argc, char *argv[])
     const char *fw_path   = argv[1];
     const char *flash_out = (argc >= 3) ? argv[2] : "flash_out.bin";
 
-    /* 打开固件帧文件（模拟 UART 输入） */
-    if (port_win32_uart_open(fw_path) != 0) {
-        return 1;
-    }
+    /* 打开固件文件（模拟 UART 输入） */
+    if (port_win32_uart_open(fw_path) != 0) return 1;
 
-    /* 打开 flash 输出文件 */
+    /* 打开 Flash 输出文件 */
     if (port_win32_flash_open(flash_out) != 0) {
         port_win32_uart_close();
         return 1;
     }
 
-    /* 构建 port 和 protocol */
-    loader_port_t port = port_win32_create();
-    const loader_protocol_t *proto = proto_custom_get();
+    /* 构建 HAL 和协议 */
+    hal_port_t hal = port_win32_create();
+    proto_t *proto = &xmodem_protocol;
 
-    /* 接收缓冲区 */
-    uint8_t buf[256];
+    /* 初始化 bootloader 上下文 */
+    boot_context_t ctx;
+    boot_init(&ctx, &state_check_boot_state, &hal, proto,
+              0x08001000, 1024, 63);
 
-    printf("=== LiteLoader 测试开始 ===\n");
-    printf("固件输入: %s\n", fw_path);
-    printf("Flash 输出: %s\n", flash_out);
-    printf("协议: %s\n", proto->name ? proto->name : "(unnamed)");
-    printf("===========================\n\n");
+    printf("=== LiteLoader Test ===\n");
+    printf("Firmware: %s\n", fw_path);
+    printf("Flash output: %s\n", flash_out);
+    printf("Protocol: %s\n", proto->name ? proto->name : "(unnamed)");
+    printf("=======================\n\n");
 
-    /* 启动 bootloader（不会正常返回） */
-    boot_process(&port, proto, buf, sizeof(buf));
+    /* 运行 bootloader */
+    boot_handle(&ctx);
 
-    /* 清理（正常情况下不会执行到这里） */
+    /* 清理 */
     port_win32_flash_close();
     port_win32_uart_close();
 
-    printf("\n=== 测试完成 ===\n");
+    printf("\n=== Test Complete ===\n");
     return 0;
 }

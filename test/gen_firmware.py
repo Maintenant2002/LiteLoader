@@ -1,74 +1,71 @@
 #!/usr/bin/env python3
 """
-gen_firmware.py - 生成测试用随机固件 bin 文件
+gen_firmware.py - 生成 XMODEM-CRC 格式的测试固件
 
 用法：
-    python gen_firmware.py                  # 生成 63KB 随机固件
+    python gen_firmware.py                  # 生成 63KB 固件
     python gen_firmware.py -s 32768         # 指定 32KB
     python gen_firmware.py -o my_fw.bin     # 指定输出文件名
 
-生成文件同时包含协议帧数据（供 bootloader 通过串口接收），
-bootloader 会将解帧后的原始数据写入 flash_out.bin。
+生成的文件是完整的 XMODEM-CRC 传输数据流，可直接喂给 bootloader。
+bootloader 会将解包后的原始数据写入 flash_out.bin。
 """
 
 import argparse
 import struct
 import random
-import sys
 import os
+import sys
 
-# 必须与 conf.h 一致
+# 必须与 boot_config.h 一致
 APP_PAGE_COUNT  = 63
 FLASH_PAGE_SIZE = 1024
 FW_MAX_SIZE     = APP_PAGE_COUNT * FLASH_PAGE_SIZE  # 64512
 
-# 必须与 proto_custom.h 一致
-MAGIC           = 0xAA
-CMD_START       = 0x01
-CMD_DATA        = 0x02
-CMD_VERIFY      = 0x03
-CMD_GO          = 0x04
-PAYLOAD_SIZE    = 127   # 每帧数据载荷（不含 opcode）
+# XMODEM 常量
+SOH       = 0x01   # 128 字节数据包
+EOT       = 0x04   # 传输结束
+ACK       = 0x06   # 确认
+NAK       = 0x15   # 否定确认
+CAN       = 0x18   # 取消
+CRC_MODE  = 0x43   # 'C' — CRC 模式
+
+BLOCK_SIZE = 128   # XMODEM 标准块大小
 
 
-def xor_checksum(data: bytes) -> int:
-    """XOR 校验"""
-    s = 0
-    for b in data:
-        s ^= b
-    return s & 0xFF
-
-
-def crc32_update(crc: int, data: bytes) -> int:
-    """CRC32 nibble 查表更新（与 proto_custom.c 一致）"""
-    TABLE = [
-        0x00000000, 0x1DB71064, 0x3B6E20C8, 0x26D930AC,
-        0x76DC4190, 0x6B6B51F4, 0x4DB26158, 0x5005713C,
-        0xEDB88320, 0xF00F9344, 0xD6D6A3E8, 0xCB61B38C,
-        0x9B64C2B0, 0x86D3D2D4, 0xA00AE278, 0xBDBDF21C,
-    ]
+def crc16_xmodem(data: bytes) -> int:
+    """计算 XMODEM CRC-16（多项式 0x1021，初始值 0x0000）"""
+    crc = 0x0000
     for byte in data:
-        crc = TABLE[(crc ^ byte) & 0x0F] ^ (crc >> 4)
-        crc = TABLE[(crc ^ (byte >> 4)) & 0x0F] ^ (crc >> 4)
+        crc ^= byte << 8
+        for _ in range(8):
+            if crc & 0x8000:
+                crc = (crc << 1) ^ 0x1021
+            else:
+                crc <<= 1
+            crc &= 0xFFFF
     return crc
 
 
-def build_frame(seq: int, payload: bytes) -> bytes:
+def build_xmodem_packet(seq: int, data: bytes) -> bytes:
     """
-    构造一个协议帧：MAGIC | SEQ | LEN | DATA | CRC
-    LEN = len(payload)  (包含 opcode 在内)
-    payload 已包含 opcode
+    构造一个 XMODEM-CRC 数据包
+    格式：SOH | PKT | ~PKT | DATA[128] | CRC_HI | CRC_LO
     """
-    assert len(payload) <= 1 + PAYLOAD_SIZE, f"payload too large: {len(payload)}"
-    seq_byte = seq & 0xFF
-    data_field = payload
-    length = len(data_field)  # opcode + 实际数据
-    crc = xor_checksum(struct.pack("BB", seq_byte, length) + data_field)
-    return struct.pack("BBB", MAGIC, seq_byte, length) + data_field + struct.pack("B", crc)
+    assert len(data) == BLOCK_SIZE, f"data must be {BLOCK_SIZE} bytes, got {len(data)}"
+    assert 1 <= seq <= 255
+
+    pkt = seq & 0xFF
+    pkt_comp = (~pkt) & 0xFF
+    crc = crc16_xmodem(data)
+    crc_hi = (crc >> 8) & 0xFF
+    crc_lo = crc & 0xFF
+
+    return bytes([SOH, pkt, pkt_comp]) + data + bytes([crc_hi, crc_lo])
 
 
 def main():
-    parser = argparse.ArgumentParser(description="LiteLoader 测试固件生成器")
+    parser = argparse.ArgumentParser(description="LiteLoader XMODEM-CRC 固件生成器")
     parser.add_argument("-s", "--size", type=int, default=FW_MAX_SIZE,
                         help=f"固件大小（字节，默认 {FW_MAX_SIZE}）")
     parser.add_argument("-o", "--output", default="test_firmware.bin",
@@ -84,51 +81,37 @@ def main():
     fw_data = bytes(random.getrandbits(8) for _ in range(fw_size))
     print(f"生成随机固件：{fw_size} 字节 ({fw_size / 1024:.1f} KB)")
 
-    # 2. 计算 CRC32
-    crc = 0xFFFFFFFF
-    crc = crc32_update(crc, fw_data)
-    crc ^= 0xFFFFFFFF
-    print(f"CRC32: 0x{crc:08X}")
-
-    # 3. 构造帧序列
-    frames = bytearray()
-    seq = 0
-
-    # CMD_START: opcode(1B) + fw_size(4B LE) = 5 字节
-    start_payload = struct.pack("<BI", CMD_START, fw_size)
-    frames += build_frame(seq, start_payload)
-    seq += 1
-
-    # CMD_DATA × N
+    # 2. 分块构造 XMODEM 数据包
+    output = bytearray()
     offset = 0
-    data_frame_count = 0
+    seq = 1
+    packet_count = 0
+
     while offset < fw_size:
-        chunk = fw_data[offset:offset + PAYLOAD_SIZE]
-        data_payload = bytes([CMD_DATA]) + chunk
-        frames += build_frame(seq, data_payload)
-        seq += 1
-        offset += len(chunk)
-        data_frame_count += 1
+        chunk = fw_data[offset:offset + BLOCK_SIZE]
 
-    # CMD_VERIFY: opcode(1B) + crc32(4B LE) = 5 字节
-    verify_payload = struct.pack("<BI", CMD_VERIFY, crc)
-    frames += build_frame(seq, verify_payload)
-    seq += 1
+        # 不足 128 字节的最后一个包用 0x1A (SUB) 填充
+        if len(chunk) < BLOCK_SIZE:
+            chunk = chunk + b'\x1a' * (BLOCK_SIZE - len(chunk))
 
-    # CMD_GO
-    go_payload = bytes([CMD_GO])
-    frames += build_frame(seq, go_payload)
+        packet = build_xmodem_packet(seq, chunk)
+        output.extend(packet)
 
-    print(f"帧统计：CMD_START=1, CMD_DATA={data_frame_count}, "
-          f"CMD_VERIFY=1, CMD_GO=1, 共 {seq + 1} 帧")
+        seq = (seq % 255) + 1  # 序号 1~255 循环
+        offset += BLOCK_SIZE
+        packet_count += 1
+
+    # 3. EOT 结束
+    output.append(EOT)
+
+    print(f"XMODEM 包数：{packet_count}")
+    print(f"总帧大小：{len(output)} 字节")
 
     # 4. 写入文件
-    output_path = args.output
-    with open(output_path, "wb") as f:
-        f.write(frames)
+    with open(args.output, "wb") as f:
+        f.write(output)
 
-    file_size = os.path.getsize(output_path)
-    print(f"已写入：{output_path}（{file_size} 字节）")
+    print(f"已写入：{args.output}")
 
 
 if __name__ == "__main__":
