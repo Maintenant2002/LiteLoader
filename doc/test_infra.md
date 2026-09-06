@@ -12,19 +12,22 @@ Flash 操作改为文件写入和控制台输出。
 
 ```
 LiteLoader/
-├── CMakeLists.txt              # 组件级 CMake
-├── boot_loader.h               # 状态模式核心：boot_context_t, state_t
-├── states.c                    # 状态实现 + boot_handle/boot_init
-├── hal_port.h                  # 硬件抽象层接口
-├── proto.h                     # 协议抽象接口
-├── boot_config.h               # 配置（地址、页大小等）
-├── proto_xmodem.c              # XMODEM-CRC 协议实现
+├── src/
+│   ├── boot_loader.h           # 状态模式核心：boot_context_t, state_t
+│   ├── states.c                # 状态实现 + boot_handle/boot_init
+│   ├── hal_port.h              # 硬件抽象层接口
+│   ├── proto.h                 # 协议抽象接口
+│   ├── boot_config.h           # 配置（地址、页大小等）
+│   └── proto_xmodem.c          # XMODEM-CRC 协议实现
+├── scripts/
+│   └── flash.py                # 上位机烧录工具
 ├── test/
 │   ├── CMakeLists.txt          # 测试构建入口
 │   ├── gen_firmware.py         # Python XMODEM-CRC 帧生成器
 │   ├── main_test.c             # 测试 main
 │   └── port_win32.c            # Windows hal_port_t 实现
-└── docs/
+├── CMakeLists.txt              # 组件级 CMake
+└── doc/
     └── test_infra.md           # 本文档
 ```
 
